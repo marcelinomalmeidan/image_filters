@@ -1,0 +1,23 @@
+<launch>
+
+    <node pkg="hsv_filter" type="hsv_filter" name="hsv_filter" output="screen">
+
+		<!--HSV limits -->
+		<param name="h_min" value="45"/>
+		<param name="h_max" value="95"/>
+		<param name="s_min" value="0"/>
+		<param name="s_max" value="255"/>
+		<param name="v_min" value="0"/>
+		<param name="v_max" value="255"/>
+
+		<!-- Options -->
+		<param name="invert_result" value="true"/>
+		<param name="display_result" value="true"/>
+		
+
+		<!-- Image topics -->
+		<param name="input_topic" value="/camera/color/image_raw"/>
+		<param name="out_topic" value="/camera/rgb/image_raw"/>
+	</node>
+
+</launch>
