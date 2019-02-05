@@ -72,32 +72,14 @@ public:
 
     // Filter image
     cv::Mat mask, output_image;
-    // if ( lower_color_range_[0] < upper_color_range_[0] ) {
-      cv::inRange(hsv_image, cv::Scalar(h_min_, s_min_, v_min_), 
-                  cv::Scalar(h_max_, s_max_, v_max_), mask);
-      if(invert_) {
-        hsv_image.copyTo(output_image, cv::Scalar::all(255) - mask);
-      } else {
-        hsv_image.copyTo(output_image, mask);
-      }
-      cv::cvtColor(output_image, output_image, cv::COLOR_HSV2BGR);
-    // }else {
-    //   cv::Scalar lower_color_range_0 = cv::Scalar(       0, s_min_, v_min_, 0);
-    //   cv::Scalar upper_color_range_0 = cv::Scalar(h_max_/2, s_max_, v_max_, 0);
-    //   cv::Scalar lower_color_range_360 = cv::Scalar(h_min_/2, s_min_, v_min_, 0);
-    //   cv::Scalar upper_color_range_360 = cv::Scalar(   360/2, s_max_, v_max_, 0);
-    //   cv::Mat output_image_0, output_image_360;
-    //   cv::inRange(hsv_image, lower_color_range_0, upper_color_range_0, output_image_0);
-    //   cv::inRange(hsv_image, lower_color_range_360, upper_color_range_360, output_image_360);
-
-    //   if(invert_) {
-    //     mask = (output_image_0 | output_image_360);
-    //   } else {
-    //     mask = cv::Scalar::all(255) - (output_image_0 | output_image_360);
-    //   }
-    //   hsv_image.copyTo(output_image, mask);
-    //   cv::cvtColor(output_image, output_image, cv::COLOR_HSV2BGR);
-    // }
+    cv::inRange(hsv_image, cv::Scalar(h_min_, s_min_, v_min_), 
+                cv::Scalar(h_max_, s_max_, v_max_), mask);
+    if(invert_) {
+      hsv_image.copyTo(output_image, cv::Scalar::all(255) - mask);
+    } else {
+      hsv_image.copyTo(output_image, mask);
+    }
+    cv::cvtColor(output_image, output_image, cv::COLOR_HSV2BGR);
 
     // Publish the image.
     sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(msg->header, sensor_msgs::image_encodings::BGR8, output_image).toImageMsg();

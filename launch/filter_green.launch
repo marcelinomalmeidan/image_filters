@@ -12,7 +12,7 @@
 
 		<!-- Options -->
 		<param name="invert_result" value="true"/>
-		<param name="display_result" value="true"/>
+		<param name="display_result" value="false"/>
 		
 
 		<!-- Image topics -->
