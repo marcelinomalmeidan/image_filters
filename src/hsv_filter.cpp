@@ -20,6 +20,7 @@ class ImageConverter
   cv::Scalar lower_color_range_, upper_color_range_;
   bool invert_, display_results_;
   std::string input_topic_, out_topic_;
+  std::vector<double> crop_percent_;
 
 public:
   ImageConverter(ros::NodeHandle *nh) : it_(nh_){
@@ -36,19 +37,20 @@ public:
     nh_.getParam("display_result", display_results_);
     nh_.getParam("input_topic", input_topic_);
     nh_.getParam("out_topic", out_topic_);
+    nh_.getParam("crop_percent", crop_percent_);
 
     ROS_INFO("Input topic: %s", input_topic_.c_str());
     ROS_INFO("Output topic: %s", out_topic_.c_str());
+    for (uint i = 0; i < 4; i++) {
+      crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
+    }
 
     if (s_max_ < s_min_) std::swap(s_max_, s_min_);
     if (v_max_ < v_min_) std::swap(v_max_, v_min_);
-    // lower_color_range_ = cv::Scalar(h_min_/2, s_min_, v_min_, 0);
-    // upper_color_range_ = cv::Scalar(h_max_/2, s_max_, v_max_, 0);
 
 
     // Subscrive to input video feed and publish output video feed
-    image_sub_ = it_.subscribe(input_topic_, 1,
-      &ImageConverter::image_callback, this);
+    image_sub_ = it_.subscribe(input_topic_, 1, &ImageConverter::image_callback, this);
     image_pub_ = it_.advertise(out_topic_, 1);
 
     if(display_results_){
@@ -65,20 +67,33 @@ public:
   void image_callback(const sensor_msgs::ImageConstPtr& msg) {
     // Convert to Opencv
     cv::Mat input_image = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8)->image;
-
+    
     // Transform image into HSV
     cv::Mat hsv_image;
     cv::cvtColor(input_image, hsv_image, cv::COLOR_BGR2HSV);
+
+    // Get crop info
+    uint height = msg->height;
+    uint width = msg->width;
+    uint roi_left = std::floor(crop_percent_[0]*float(width)/100.0);
+    uint roi_bottom = std::floor(crop_percent_[1]*float(height)/100.0);
+    uint roi_right = std::floor(crop_percent_[2]*float(width)/100.0);
+    uint roi_up = std::floor(crop_percent_[3]*float(height)/100.0);
+    uint roi_width = width - roi_left - roi_right;
+    uint roi_height = height - roi_up - roi_bottom;
+    cv::Rect ROI(roi_left, roi_up, roi_width, roi_height);
+    cv::Mat roi_mask(hsv_image.size(), CV_8UC1, cv::Scalar::all(0));
+    roi_mask(ROI).setTo(cv::Scalar::all(255));
 
     // Filter image
     cv::Mat mask, output_image;
     cv::inRange(hsv_image, cv::Scalar(h_min_, s_min_, v_min_), 
                 cv::Scalar(h_max_, s_max_, v_max_), mask);
     if(invert_) {
-      hsv_image.copyTo(output_image, cv::Scalar::all(255) - mask);
-    } else {
-      hsv_image.copyTo(output_image, mask);
+      mask = cv::Scalar::all(255) - mask;
     }
+    cv::bitwise_and(mask, roi_mask, mask);
+    hsv_image.copyTo(output_image, mask);
     cv::cvtColor(output_image, output_image, cv::COLOR_HSV2BGR);
 
     // Publish the image.

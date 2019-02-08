@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(hsv_filter)
+project(image_filters)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   roscpp
   sensor_msgs
+  message_filters
 )
 
 find_package(OpenCV REQUIRED)
@@ -35,3 +36,6 @@ include_directories(
 
 add_executable(hsv_filter src/hsv_filter.cpp)
 target_link_libraries(hsv_filter ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_executable(depth_filter src/depth_filter.cpp)
+target_link_libraries(depth_filter ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

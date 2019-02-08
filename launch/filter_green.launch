@@ -1,6 +1,6 @@
 <launch>
 
-    <node pkg="hsv_filter" type="hsv_filter" name="hsv_filter" output="screen">
+    <node pkg="image_filters" type="hsv_filter" name="hsv_filter" output="screen">
 
 		<!--HSV limits -->
 		<param name="h_min" value="45"/>
@@ -12,7 +12,10 @@
 
 		<!-- Options -->
 		<param name="invert_result" value="true"/>
-		<param name="display_result" value="false"/>
+		<param name="display_result" value="true"/>
+
+		<!-- Crop edges (left, bottom, right, top) in percent -->
+		<rosparam param="crop_percent">[0, 0, 0, 0]</rosparam>
 		
 
 		<!-- Image topics -->
