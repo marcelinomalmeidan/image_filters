@@ -8,4 +8,4 @@ ROS package for removing out background/foreground in images
 ROS package for smoothing background/foreground in images
 
 # Instructions
-Simple to use. Just check the launch file for an example.
+Simple to use. Just check the launch files for examples.
