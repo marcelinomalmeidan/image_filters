@@ -1,10 +1,13 @@
 <launch>
 
-    <node pkg="image_filters" type="depth_filter" name="depth_filter" output="screen">
+    <node pkg="image_filters" type="portrait_mode" name="portrait_mode" output="screen">
 
 		<!--Min/max thresholds (in meters) -->
 		<param name="threshold_min" value="0.2"/>
 		<param name="threshold_max" value="2.0"/>
+
+		<!-- Smooth factor => determines how much the background is smoothed -->
+		<param name="smooth_factor" value="20"/>
 
 		<!-- Depth unit conversion (in case depth is not obtained in  meters) -->
 		<!-- realsense has depth in millimiters -->

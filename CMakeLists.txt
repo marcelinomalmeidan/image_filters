@@ -39,3 +39,6 @@ target_link_libraries(hsv_filter ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
 
 add_executable(depth_filter src/depth_filter.cpp)
 target_link_libraries(depth_filter ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_executable(portrait_mode src/portrait_mode.cpp)
+target_link_libraries(portrait_mode ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})

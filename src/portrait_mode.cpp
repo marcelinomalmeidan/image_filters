@@ -19,6 +19,35 @@ typedef message_filters::Synchronizer<SyncPolicy> Sync;
 
 
 
+bool MaskedSmoothOptimised(cv::Mat mSrc, cv::Mat mMask, cv::Mat &mDst, double smooth_factor) {
+    if(mSrc.empty())
+    {
+        return 0;
+    }
+
+    cv::Mat mGSmooth;   
+    cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
+
+    mDst = cv::Mat(mSrc.size(), CV_32FC3);
+    mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
+    mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
+
+    cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
+    cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));
+    // cv::medianBlur(mSrc,mGSmooth, 5); 
+    // cv::medianBlur(mMask,mMask, 5);    
+
+    cv::Mat M1,M2,M3;
+
+    cv::subtract(cv::Scalar::all(1.0),mMask,M1);
+    cv::multiply(M1,mSrc,M2);
+    cv::multiply(mMask,mGSmooth,M3);        
+    cv::add(M2,M3,mDst);
+    mDst.convertTo(mDst, CV_8UC3, 255);
+
+    return true;
+}
+
 class ImageConverter
 {
   ros::NodeHandle nh_;
@@ -31,7 +60,9 @@ class ImageConverter
   std::string in_rgb_topic_, in_depth_topic_, out_topic_;
   std::vector<double> crop_percent_;
   boost::shared_ptr<Sync> sync_;
-  
+  double smooth_factor_;
+  // message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image> sync_(rgb_sub_, depth_sub_, 10);
+
 public:
   ImageConverter(ros::NodeHandle *nh) : it_(nh_){
 
@@ -46,6 +77,7 @@ public:
     nh_.getParam("input_depth_topic", in_depth_topic_);
     nh_.getParam("out_topic", out_topic_);
     nh_.getParam("crop_percent", crop_percent_);
+    nh_.getParam("smooth_factor", smooth_factor_);
 
     ROS_INFO("Input RGB topic: %s", in_rgb_topic_.c_str());
     ROS_INFO("Input Depth topic: %s", in_depth_topic_.c_str());
@@ -112,19 +144,16 @@ public:
 
     // Dilate mask
     cv::Mat depth_mask_dilated(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
-    int dilation_size = 8;
+    int dilation_size = 16;
     cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
                     cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
                     cv::Point(dilation_size, dilation_size) );
     cv::dilate(depth_mask, depth_mask_dilated, element);
 
-    // Remove background
+    // Get backrgound and blur it
     cv::Mat output_image;
-    if(invert_) {
-      depth_mask_dilated = cv::Scalar::all(255) - depth_mask_dilated;
-    }
-    cv::bitwise_and(depth_mask_dilated, roi_mask, depth_mask_dilated);
-    rgb_image.copyTo(output_image, depth_mask_dilated);
+    cv::Mat inv_mask = cv::Scalar::all(255) - depth_mask_dilated;
+    MaskedSmoothOptimised(rgb_image,inv_mask,output_image, smooth_factor_);
 
     // Publish the image.
     sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::BGR8, output_image).toImageMsg();
@@ -143,7 +172,7 @@ public:
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "depth_filter");
+  ros::init(argc, argv, "portrait_mode");
   ros::NodeHandle node("~");
   ImageConverter ic(&node);
 
