@@ -18,7 +18,8 @@ class ImageConverter
   image_transport::Publisher image_pub_;
   int h_min_, h_max_, s_min_, s_max_, v_min_, v_max_;
   cv::Scalar lower_color_range_, upper_color_range_;
-  bool invert_, display_results_;
+  bool display_results_;
+  int invert_;
   std::string input_topic_, out_topic_;
   std::vector<double> crop_percent_;
 
@@ -27,13 +28,14 @@ public:
 
     nh_ = *nh;
     // Get parameters
+    bool invert;
     nh_.getParam("h_min", h_min_);
     nh_.getParam("h_max", h_max_);
     nh_.getParam("s_min", s_min_);
     nh_.getParam("s_max", s_max_);
     nh_.getParam("v_min", v_min_);
     nh_.getParam("v_max", v_max_);
-    nh_.getParam("invert_result", invert_);
+    nh_.getParam("invert_result", invert);
     nh_.getParam("display_result", display_results_);
     nh_.getParam("input_topic", input_topic_);
     nh_.getParam("out_topic", out_topic_);
@@ -43,6 +45,11 @@ public:
     ROS_INFO("Output topic: %s", out_topic_.c_str());
     for (uint i = 0; i < 4; i++) {
       crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
+    }
+    if (invert) {
+      invert_ = 1;
+    } else {
+      invert_ = 0;
     }
 
     if (s_max_ < s_min_) std::swap(s_max_, s_min_);
@@ -54,7 +61,15 @@ public:
     image_pub_ = it_.advertise(out_topic_, 1);
 
     if(display_results_){
+      int max_slider = 255;
       cv::namedWindow(OPENCV_WINDOW);
+      cv::createTrackbar( "H min", OPENCV_WINDOW, &h_min_, max_slider, this->hmin_trackbar);
+      cv::createTrackbar( "H max", OPENCV_WINDOW, &h_max_, max_slider, this->hmax_trackbar);
+      cv::createTrackbar( "S min", OPENCV_WINDOW, &s_min_, max_slider, this->smin_trackbar);
+      cv::createTrackbar( "S max", OPENCV_WINDOW, &s_max_, max_slider, this->smax_trackbar);
+      cv::createTrackbar( "V min", OPENCV_WINDOW, &v_min_, max_slider, this->vmin_trackbar);
+      cv::createTrackbar( "V max", OPENCV_WINDOW, &v_max_, max_slider, this->vmax_trackbar);
+      cv::createTrackbar( "Invert result", OPENCV_WINDOW, &invert_, 1, this->invert_trackbar);
     }
   }
 
@@ -71,6 +86,9 @@ public:
     // Transform image into HSV
     cv::Mat hsv_image;
     cv::cvtColor(input_image, hsv_image, cv::COLOR_BGR2HSV);
+
+    // Make sure HSV values are in the right range
+    this->check_hsv_values();
 
     // Get crop info
     uint height = msg->height;
@@ -106,6 +124,35 @@ public:
     }
 
   }
+
+  void check_hsv_values() {
+    if (h_min_ > h_max_) {
+      h_min_ = h_max_;
+    }
+    if (s_min_ > s_max_) {
+      s_min_ = s_max_;
+    }
+    if (v_min_ > v_max_) {
+      v_min_ = v_max_;
+    }
+    if (h_max_ < h_min_) {
+      h_max_ = h_min_;
+    }
+    if (s_max_ < s_min_) {
+      s_max_ = s_min_;
+    }
+    if (v_max_ < v_min_) {
+      v_max_ = v_min_;
+    }
+  }
+
+  static void hmin_trackbar( int, void* ) { }
+  static void smin_trackbar( int, void* ) { }
+  static void vmin_trackbar( int, void* ) { }
+  static void hmax_trackbar( int, void* ) { }
+  static void smax_trackbar( int, void* ) { }
+  static void vmax_trackbar( int, void* ) { }
+  static void invert_trackbar( int, void* ) { }
 };
 
 

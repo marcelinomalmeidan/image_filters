@@ -19,52 +19,24 @@ typedef message_filters::Synchronizer<SyncPolicy> Sync;
 
 
 
-bool MaskedSmoothOptimised(cv::Mat mSrc, cv::Mat mMask, cv::Mat &mDst, double smooth_factor) {
-    if(mSrc.empty())
-    {
-        return 0;
-    }
-
-    cv::Mat mGSmooth;   
-    cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
-
-    mDst = cv::Mat(mSrc.size(), CV_32FC3);
-    mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
-    mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
-
-    cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
-    cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));
-    // cv::medianBlur(mSrc,mGSmooth, 5); 
-    // cv::medianBlur(mMask,mMask, 5);    
-
-    cv::Mat M1,M2,M3;
-
-    cv::subtract(cv::Scalar::all(1.0),mMask,M1);
-    cv::multiply(M1,mSrc,M2);
-    cv::multiply(mMask,mGSmooth,M3);        
-    cv::add(M2,M3,mDst);
-    mDst.convertTo(mDst, CV_8UC3, 255);
-
-    return true;
-}
-
 class ImageConverter
 {
   ros::NodeHandle nh_;
   image_transport::ImageTransport it_;
   message_filters::Subscriber<sensor_msgs::Image> rgb_sub_, depth_sub_;
   image_transport::Publisher image_pub_;
-  float th_min_, th_max_;
+  float th_min_, th_max_;     // Thresholds in meters
+  int th_min_mm_, th_max_mm_; // Thresholds in millimeters
   float depth_conversion_;
   bool invert_, display_results_;
   std::string in_rgb_topic_, in_depth_topic_, out_topic_;
   std::vector<double> crop_percent_;
   boost::shared_ptr<Sync> sync_;
-  double smooth_factor_;
+  int smooth_factor_, smooth_factor_max_;
   // message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image> sync_(rgb_sub_, depth_sub_, 10);
 
 public:
-  ImageConverter(ros::NodeHandle *nh) : it_(nh_){
+  ImageConverter(ros::NodeHandle *nh) : it_(nh_) {
 
     nh_ = *nh;
     // Get parameters
@@ -85,16 +57,25 @@ public:
     for (uint i = 0; i < 4; i++) {
       crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
     }
+    th_min_mm_ = std::floor(th_min_*1000);
+    th_max_mm_ = std::floor(th_max_*1000);
 
-    // Subscrive to input video feed and publish output video feed
+    // Set max smooth factor
+    smooth_factor_max_ = 30;
+
+    // Subscribe to input video feed and publish output video feed
     rgb_sub_.subscribe(nh_, in_rgb_topic_, 1);
     depth_sub_.subscribe(nh_, in_depth_topic_, 1);
     sync_.reset(new Sync(SyncPolicy(10), rgb_sub_, depth_sub_));
     sync_->registerCallback(boost::bind(&ImageConverter::image_callback, this, _1, _2));
     image_pub_ = it_.advertise(out_topic_, 1);
 
-    if(display_results_){
+    if(display_results_) {
+      int max_dist = 10000;
       cv::namedWindow(OPENCV_WINDOW);
+      cv::createTrackbar( "Smoothness", OPENCV_WINDOW, &smooth_factor_, smooth_factor_max_, this->smooth_trackbar);
+      cv::createTrackbar( "Min Distance Threshold (mm)", OPENCV_WINDOW, &th_min_mm_, max_dist, this->min_th_trackbar);
+      cv::createTrackbar( "Max Distance Threshold (mm)", OPENCV_WINDOW, &th_max_mm_, max_dist, this->max_th_trackbar);
     }
   }
 
@@ -106,7 +87,6 @@ public:
 
   void image_callback(const sensor_msgs::ImageConstPtr& rgb_msg,
                       const sensor_msgs::ImageConstPtr& depth_msg) {
-    // ROS_INFO("dt = %f", (rgb_msg->header.stamp - depth_msg->header.stamp).toSec());
 
     if((rgb_msg->width != depth_msg->width) || (rgb_msg->height != depth_msg->height)) {
       ROS_WARN("Depth image size does not match color image size! Callback will not execute!");
@@ -130,30 +110,35 @@ public:
     cv::Mat roi_mask(rgb_image.size(), CV_8UC1, cv::Scalar::all(0));
     roi_mask(ROI).setTo(cv::Scalar::all(255));
 
-    // Perform depth filtering in the RGB image
-    cv::Mat depth_mask(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
-    for (uint i = 0; i < height; i++) {
-      for (uint j = 0; j < width; j++) {
-        cv::Scalar intensity = depth_image.at<float>(i,j);
-        float pixel_depth = intensity[0]*depth_conversion_;
-        if ((pixel_depth < th_min_) || (pixel_depth > th_max_)) {
-          depth_mask.at<uchar>(i,j) = 0;
+    cv::Mat output_image;
+    if (smooth_factor_ > 0) {
+      // Perform depth filtering in the RGB image
+      GetMinMaxThreshold();
+      cv::Mat depth_mask(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
+      for (uint i = 0; i < height; i++) {
+        for (uint j = 0; j < width; j++) {
+          cv::Scalar intensity = depth_image.at<float>(i,j);
+          float pixel_depth = intensity[0]*depth_conversion_;
+          if ((pixel_depth < th_min_) || (pixel_depth > th_max_)) {
+            depth_mask.at<uchar>(i,j) = 0;
+          }
         }
       }
+
+      // Dilate mask
+      cv::Mat depth_mask_dilated(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
+      int dilation_size = 16;
+      cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
+                      cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
+                      cv::Point(dilation_size, dilation_size) );
+      cv::dilate(depth_mask, depth_mask_dilated, element);
+
+      // Get backrgound and blur it
+      cv::Mat inv_mask = cv::Scalar::all(255) - depth_mask_dilated;
+      this->MaskedSmoothOptimised(rgb_image,inv_mask,output_image, smooth_factor_);
+    } else {
+      output_image = rgb_image;
     }
-
-    // Dilate mask
-    cv::Mat depth_mask_dilated(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
-    int dilation_size = 16;
-    cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
-                    cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
-                    cv::Point(dilation_size, dilation_size) );
-    cv::dilate(depth_mask, depth_mask_dilated, element);
-
-    // Get backrgound and blur it
-    cv::Mat output_image;
-    cv::Mat inv_mask = cv::Scalar::all(255) - depth_mask_dilated;
-    MaskedSmoothOptimised(rgb_image,inv_mask,output_image, smooth_factor_);
 
     // Publish the image.
     sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::BGR8, output_image).toImageMsg();
@@ -167,6 +152,42 @@ public:
     }
 
   }
+
+  bool MaskedSmoothOptimised(cv::Mat mSrc, cv::Mat mMask, cv::Mat &mDst, double smooth_factor) {
+    if(mSrc.empty())
+    {
+        return 0;
+    }
+
+    cv::Mat mGSmooth;   
+    cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
+
+    mDst = cv::Mat(mSrc.size(), CV_32FC3);
+    mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
+    mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
+
+    cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
+    cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));   
+
+    cv::Mat M1,M2,M3;
+
+    cv::subtract(cv::Scalar::all(1.0),mMask,M1);
+    cv::multiply(M1,mSrc,M2);
+    cv::multiply(mMask,mGSmooth,M3);        
+    cv::add(M2,M3,mDst);
+    mDst.convertTo(mDst, CV_8UC3, 255);
+
+    return true;
+  }
+
+  void GetMinMaxThreshold() {
+    th_min_ = float(th_min_mm_)/1000.0;
+    th_max_ = float(th_max_mm_)/1000.0;
+  }
+
+  static void smooth_trackbar( int, void* ) { }
+  static void min_th_trackbar( int, void* ) { }
+  static void max_th_trackbar( int, void* ) { }
 };
 
 
