@@ -4,7 +4,7 @@ ROS package for filtering out colors from images
 # depth_filter
 ROS package for removing out background/foreground in images
 
-# depth_filter
+# portrait_mode
 ROS package for smoothing background/foreground in images
 
 # Instructions
