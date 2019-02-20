@@ -41,8 +41,6 @@ public:
     nh_.getParam("out_topic", out_topic_);
     nh_.getParam("crop_percent", crop_percent_);
 
-    ROS_INFO("Input topic: %s", input_topic_.c_str());
-    ROS_INFO("Output topic: %s", out_topic_.c_str());
     for (uint i = 0; i < 4; i++) {
       crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
     }
@@ -59,6 +57,9 @@ public:
     // Subscrive to input video feed and publish output video feed
     image_sub_ = it_.subscribe(input_topic_, 1, &ImageConverter::image_callback, this);
     image_pub_ = it_.advertise(out_topic_, 1);
+
+    ROS_INFO("Input RGB topic: %s", image_sub_.getTopic().c_str());
+    ROS_INFO("Output topic: %s", image_pub_.getTopic().c_str());
 
     if(display_results_){
       int max_slider = 255;

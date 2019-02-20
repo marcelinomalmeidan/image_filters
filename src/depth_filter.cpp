@@ -48,9 +48,6 @@ public:
     nh_.getParam("out_topic", out_topic_);
     nh_.getParam("crop_percent", crop_percent_);
 
-    ROS_INFO("Input RGB topic: %s", in_rgb_topic_.c_str());
-    ROS_INFO("Input Depth topic: %s", in_depth_topic_.c_str());
-    ROS_INFO("Output topic: %s", out_topic_.c_str());
     for (uint i = 0; i < 4; i++) {
       crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
     }
@@ -63,6 +60,10 @@ public:
     sync_.reset(new Sync(SyncPolicy(10), rgb_sub_, depth_sub_));
     sync_->registerCallback(boost::bind(&ImageConverter::image_callback, this, _1, _2));
     image_pub_ = it_.advertise(out_topic_, 1);
+
+    ROS_INFO("Input RGB topic: %s", rgb_sub_.getTopic().c_str());
+    ROS_INFO("Input Depth topic: %s", depth_sub_.getTopic().c_str());
+    ROS_INFO("Output topic: %s", image_pub_.getTopic().c_str());
 
     if(display_results_){
       int max_dist = 10000;

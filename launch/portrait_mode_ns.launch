@@ -1,6 +1,6 @@
 <launch>
 
-
+	<arg name="namespace" default="Frodo" />
     <node pkg="image_filters" type="portrait_mode" name="portrait_mode" output="screen">
 
 		<!--Min/max thresholds (in meters) -->
@@ -27,9 +27,9 @@
 		<!-- Image topics -->
 		<!-- NOTE: depth has to be registered to the color topic , i.e., their pixels are aligned-->
 		<!-- NOTE2: depth and color have to be time-synchronized (header/stamp should match) -->
-		<param name="input_rgb_topic" value="/camera/color/image_raw"/>
-		<param name="input_depth_topic" value="/camera/depth_registered/image_raw"/>
-		<param name="out_topic" value="/camera/rgb/image_raw"/>
+		<param name="input_rgb_topic" value="/$(arg namespace)/camera/color/image_raw"/>
+		<param name="input_depth_topic" value="/$(arg namespace)/camera/depth_registered/image_raw"/>
+		<param name="out_topic" value="/$(arg namespace)/camera/rgb/image_raw"/>
 	</node>
 
 </launch>

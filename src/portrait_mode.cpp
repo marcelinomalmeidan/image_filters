@@ -28,8 +28,9 @@ class ImageConverter
   float th_min_, th_max_;     // Thresholds in meters
   int th_min_mm_, th_max_mm_; // Thresholds in millimeters
   float depth_conversion_;
-  bool invert_, display_results_;
+  bool invert_, display_results_, is_rgb_;
   std::string in_rgb_topic_, in_depth_topic_, out_topic_;
+  std::string output_type_;
   std::vector<double> crop_percent_;
   boost::shared_ptr<Sync> sync_;
   int smooth_factor_, smooth_factor_max_;
@@ -50,15 +51,28 @@ public:
     nh_.getParam("out_topic", out_topic_);
     nh_.getParam("crop_percent", crop_percent_);
     nh_.getParam("smooth_factor", smooth_factor_);
-
-    ROS_INFO("Input RGB topic: %s", in_rgb_topic_.c_str());
-    ROS_INFO("Input Depth topic: %s", in_depth_topic_.c_str());
-    ROS_INFO("Output topic: %s", out_topic_.c_str());
+    nh_.getParam("output_type", output_type_);
+    
+    // Setting crop bounds
     for (uint i = 0; i < 4; i++) {
       crop_percent_[i] = std::max(std::min(crop_percent_[i], 100.0), 0.0);
     }
+
+    // Conversion from meters to millimiters
     th_min_mm_ = std::floor(th_min_*1000);
     th_max_mm_ = std::floor(th_max_*1000);
+
+    // Select output type
+    if (output_type_.compare("GRAY") == 0) {
+      ROS_INFO("Output is GRAY!");
+      is_rgb_ = false;
+    } else if (output_type_.compare("RGB") == 0) {
+      ROS_INFO("Output is RGB!");
+      is_rgb_ = true;
+    } else {
+      ROS_WARN("Output types are GRAY or RGB. Output being set to RGB!");
+      is_rgb_ = true;
+    }
 
     // Set max smooth factor
     smooth_factor_max_ = 30;
@@ -69,6 +83,10 @@ public:
     sync_.reset(new Sync(SyncPolicy(10), rgb_sub_, depth_sub_));
     sync_->registerCallback(boost::bind(&ImageConverter::image_callback, this, _1, _2));
     image_pub_ = it_.advertise(out_topic_, 1);
+
+    ROS_INFO("Input RGB topic: %s", rgb_sub_.getTopic().c_str());
+    ROS_INFO("Input Depth topic: %s", depth_sub_.getTopic().c_str());
+    ROS_INFO("Output topic: %s", image_pub_.getTopic().c_str());
 
     if(display_results_) {
       int max_dist = 10000;
@@ -94,7 +112,13 @@ public:
     }
 
     // Convert to Opencv
-    cv::Mat rgb_image = cv_bridge::toCvShare(rgb_msg, sensor_msgs::image_encodings::BGR8)->image;
+    cv::Mat input_image;
+    if (is_rgb_) {
+      input_image = cv_bridge::toCvShare(rgb_msg, sensor_msgs::image_encodings::BGR8)->image;
+    } else {
+      input_image = cv_bridge::toCvShare(rgb_msg, sensor_msgs::image_encodings::BGR8)->image;
+      cv::cvtColor(input_image,input_image,CV_BGR2GRAY);
+    }
     cv::Mat depth_image = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1)->image;
  
     // Get crop info
@@ -107,14 +131,14 @@ public:
     uint roi_width = width - roi_left - roi_right;
     uint roi_height = height - roi_up - roi_bottom;
     cv::Rect ROI(roi_left, roi_up, roi_width, roi_height);
-    cv::Mat roi_mask(rgb_image.size(), CV_8UC1, cv::Scalar::all(0));
+    cv::Mat roi_mask(input_image.size(), CV_8UC1, cv::Scalar::all(0));
     roi_mask(ROI).setTo(cv::Scalar::all(255));
 
-    cv::Mat output_image;
+    cv::Mat output_image(input_image.size(), CV_8UC1, cv::Scalar::all(0));
     if (smooth_factor_ > 0) {
       // Perform depth filtering in the RGB image
       GetMinMaxThreshold();
-      cv::Mat depth_mask(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
+      cv::Mat depth_mask(input_image.size(), CV_8UC1, cv::Scalar::all(255));
       for (uint i = 0; i < height; i++) {
         for (uint j = 0; j < width; j++) {
           cv::Scalar intensity = depth_image.at<float>(i,j);
@@ -126,7 +150,7 @@ public:
       }
 
       // Dilate mask
-      cv::Mat depth_mask_dilated(rgb_image.size(), CV_8UC1, cv::Scalar::all(255));
+      cv::Mat depth_mask_dilated(input_image.size(), CV_8UC1, cv::Scalar::all(255));
       int dilation_size = 16;
       cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
                       cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
@@ -135,13 +159,18 @@ public:
 
       // Get backrgound and blur it
       cv::Mat inv_mask = cv::Scalar::all(255) - depth_mask_dilated;
-      this->MaskedSmoothOptimised(rgb_image,inv_mask,output_image, smooth_factor_);
+      this->MaskedSmoothOptimised(input_image, inv_mask, output_image, smooth_factor_);
     } else {
-      output_image = rgb_image;
+      output_image = input_image;
     }
 
     // Publish the image.
-    sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::BGR8, output_image).toImageMsg();
+    sensor_msgs::Image::Ptr out_img;
+    if (is_rgb_) {
+      out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::BGR8, output_image).toImageMsg();
+    } else {
+      out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::MONO8, output_image).toImageMsg();
+    }
     // sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::TYPE_32FC3, output_image).toImageMsg();
     // sensor_msgs::Image::Ptr out_img = cv_bridge::CvImage(rgb_msg->header, sensor_msgs::image_encodings::TYPE_8UC1, output_image).toImageMsg();
     image_pub_.publish(out_img);
@@ -159,23 +188,41 @@ public:
         return 0;
     }
 
-    cv::Mat mGSmooth;   
-    cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
+    if (is_rgb_) {  
+      cv::Mat mGSmooth;
+      cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
 
-    mDst = cv::Mat(mSrc.size(), CV_32FC3);
-    mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
-    mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
+      mDst = cv::Mat(mSrc.size(), CV_32FC3);
+      mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
+      mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
 
-    cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
-    cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));   
+      cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
+      cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));   
 
-    cv::Mat M1,M2,M3;
+      cv::Mat M1,M2,M3;
 
-    cv::subtract(cv::Scalar::all(1.0),mMask,M1);
-    cv::multiply(M1,mSrc,M2);
-    cv::multiply(mMask,mGSmooth,M3);        
-    cv::add(M2,M3,mDst);
-    mDst.convertTo(mDst, CV_8UC3, 255);
+      cv::subtract(cv::Scalar::all(1.0),mMask,M1);
+      cv::multiply(M1,mSrc,M2);
+      cv::multiply(mMask,mGSmooth,M3);
+      cv::add(M2,M3,mDst);
+      mDst.convertTo(mDst, CV_8UC3, 255);
+    } else {
+      mDst = cv::Mat(mSrc.size(), CV_32FC1);
+      mMask.convertTo(mMask, CV_32FC1, 1.0/255.0);
+      mSrc.convertTo(mSrc, CV_32FC1,1.0/255.0);
+
+      cv::Mat mGSmooth; 
+      cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
+      cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));
+
+      cv::Mat M1,M2,M3;
+
+      cv::subtract(cv::Scalar::all(1.0),mMask,M1);
+      cv::multiply(M1,mSrc,M2);
+      cv::multiply(mMask,mGSmooth,M3);
+      cv::add(M2,M3,mDst);
+      mDst.convertTo(mDst, CV_8UC1, 255);  
+    }
 
     return true;
   }
