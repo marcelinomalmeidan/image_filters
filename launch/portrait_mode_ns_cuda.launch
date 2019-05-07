@@ -1,0 +1,35 @@
+<launch>
+
+	<arg name="namespace" default="Bilbo" />
+    <node pkg="image_filters" type="portrait_mode_cuda" name="portrait_mode" output="screen">
+
+		<!--Min/max thresholds (in meters) -->
+		<param name="threshold_min" value="0.2"/>
+		<param name="threshold_max" value="2.0"/>
+
+		<!-- Smooth factor => determines how much the background is smoothed -->
+		<param name="smooth_factor" value="20"/>
+
+		<!-- Depth unit conversion (in case depth is not obtained in  meters) -->
+		<!-- realsense has depth in millimiters -->
+		<param name="depth_conversion" value="0.001"/>
+
+		<!-- Options -->
+		<param name="invert_result" value="false"/>
+		<param name="display_result" value="false"/>
+
+		<!-- OUTPUT TYPE (RGB or GRAY) -->
+		<param name="output_type" value="RGB"/>
+
+		<!-- Crop edges (left, bottom, right, top) in percent -->
+		<rosparam param="crop_percent">[0, 0, 0, 0]</rosparam>
+
+		<!-- Image topics -->
+		<!-- NOTE: depth has to be registered to the color topic , i.e., their pixels are aligned-->
+		<!-- NOTE2: depth and color have to be time-synchronized (header/stamp should match) -->
+		<param name="input_rgb_topic" value="/$(arg namespace)/camera/color/image_raw"/>
+		<param name="input_depth_topic" value="/$(arg namespace)/camera/depth_registered/image_raw"/>
+		<param name="out_topic" value="/$(arg namespace)/camera/rgb/image_raw"/>
+	</node>
+
+</launch>
