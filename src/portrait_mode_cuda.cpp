@@ -160,10 +160,30 @@ public:
 
     cv::Mat output_image(input_image.size(), CV_8UC1, cv::Scalar::all(0));
     if (smooth_factor_ > 0) {
-      // Perform depth filtering in the RGB image
+      // Create threshold mask
       GetMinMaxThreshold();
+      
+      // Cuda version -----------------------------------------------------------
+      // uint lb = th_min_/depth_conversion_, ub = th_max_/depth_conversion_;
+      // cv::cuda::GpuMat thresh_lb, thresh_ub, srcCuda(depth_image), maskCuda, maskCudaDilated;
+      // cv::cuda::threshold(srcCuda, thresh_lb, lb, 255, cv::THRESH_BINARY);
+      // cv::cuda::threshold(srcCuda, thresh_ub, ub, 255, cv::THRESH_BINARY_INV);
+      // cv::cuda::bitwise_and(thresh_lb, thresh_ub, maskCuda);
+
+      // // Dilate mask
+      // int dilation_size = 16;
+      // cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
+      //                 cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
+      //                 cv::Point(dilation_size, dilation_size) );
+      // cv::Ptr<cv::cuda::Filter> dilateFilter = cv::cuda::createMorphologyFilter(cv::MORPH_DILATE, maskCuda.type(), element);
+      // dilateFilter->apply(maskCuda, maskCudaDilated);
+
+      // // Get backrgound and blur it
+      // cv::cuda::GpuMat inv_mask; // = cv::Scalar::all(255) - maskCudaDilated;
+      // cv::cuda::subtract(cv::Scalar::all(255), maskCudaDilated, inv_mask);
+
+      // Processor version (faster) ---------------------------------------------
       cv::Mat depth_mask(input_image.size(), CV_8UC1, cv::Scalar::all(255));
-      // CudaInRangeMaskOneChannel(depth_image, th_min_/depth_conversion_, th_max_/depth_conversion_, depth_mask);
       for (uint i = 0; i < height; i++) {
         for (uint j = 0; j < width; j++) {
           cv::Scalar intensity = depth_image.at<float>(i,j);
@@ -173,7 +193,7 @@ public:
           }
         }
       }
-
+ 
       // Dilate mask
       cv::Mat depth_mask_dilated(input_image.size(), CV_8UC1, cv::Scalar::all(255));
       int dilation_size = 16;
@@ -181,9 +201,9 @@ public:
                       cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
                       cv::Point(dilation_size, dilation_size) );
       cv::dilate(depth_mask, depth_mask_dilated, element);
-
-      // Get backrgound and blur it
       cv::Mat inv_mask = cv::Scalar::all(255) - depth_mask_dilated;
+
+      // This function below is the one that is well sped up by using cuda
       this->MaskedSmoothOptimised(input_image, inv_mask, output_image, smooth_factor_);
     } else {
       output_image = input_image;
@@ -207,7 +227,7 @@ public:
 
   }
 
-  bool MaskedSmoothOptimised(cv::Mat mSrc, cv::Mat mMask, cv::Mat &mDst, double smooth_factor) {
+  bool MaskedSmoothOptimised(const cv::Mat &mSrc, const cv::Mat &mMask, cv::Mat &mDst, const double &smooth_factor) {
     if(mSrc.empty())
     {
         return 0;
@@ -215,7 +235,8 @@ public:
 
     if (is_rgb_) {
       cv::Mat mGSmooth;
-      cv::cuda::GpuMat mMaskCuda(mMask), mSrcCuda(mSrc), mMaskCuda2, mSrcCuda2, mGSmoothCuda;
+      cv::cuda::GpuMat mMaskCuda(mMask);
+      cv::cuda::GpuMat mSrcCuda(mSrc), mMaskCuda2, mSrcCuda2, mGSmoothCuda;
       cv::cuda::cvtColor(mMaskCuda, mMaskCuda, cv::COLOR_GRAY2BGR);
 
       // Convert to float 3 channels
