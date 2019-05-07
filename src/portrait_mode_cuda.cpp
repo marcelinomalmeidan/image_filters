@@ -11,13 +11,28 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#include <opencv2/core/cuda.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudafilters.hpp>
+#include <opencv2/cudaarithm.hpp>
+
 
 static const std::string OPENCV_WINDOW = "Image window";
 typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicyApprox;
 typedef message_filters::sync_policies::ExactTime<sensor_msgs::Image, sensor_msgs::Image> SyncPolicy;
 typedef message_filters::Synchronizer<SyncPolicy> Sync;
 
+void CudaInRangeMaskOneChannel(const cv::Mat &src, const uint &lb, const uint &ub, cv::Mat &mask) {
+  //Threshold
+  cv::cuda::GpuMat thresh_lb, thresh_ub, srcCuda(src), maskCuda;
+  cv::cuda::threshold(srcCuda, thresh_lb, lb, 255, cv::THRESH_BINARY);
 
+  cv::cuda::threshold(srcCuda, thresh_ub, ub, 255, cv::THRESH_BINARY_INV);
+
+  cv::cuda::bitwise_and(thresh_lb, thresh_ub, maskCuda);
+
+  maskCuda.download(mask);
+}
 
 class ImageConverter
 {
@@ -38,6 +53,13 @@ class ImageConverter
 
 public:
   ImageConverter(ros::NodeHandle *nh) : it_(nh_) {
+
+    if (cv::cuda::getCudaEnabledDeviceCount() == 0) {
+        ROS_ERROR("No GPU found!");
+        return;
+    } else {
+      ROS_WARN("GPU found!");
+    }
 
     nh_ = *nh;
     // Get parameters
@@ -111,6 +133,8 @@ public:
       return;
     }
 
+    ros::Time t0, t1, t2, t3, t4, t5, t6;
+    t0 = ros::Time::now();
     // Convert to Opencv
     cv::Mat input_image;
     if (is_rgb_) {
@@ -139,6 +163,7 @@ public:
       // Perform depth filtering in the RGB image
       GetMinMaxThreshold();
       cv::Mat depth_mask(input_image.size(), CV_8UC1, cv::Scalar::all(255));
+      // CudaInRangeMaskOneChannel(depth_image, th_min_/depth_conversion_, th_max_/depth_conversion_, depth_mask);
       for (uint i = 0; i < height; i++) {
         for (uint j = 0; j < width; j++) {
           cv::Scalar intensity = depth_image.at<float>(i,j);
@@ -190,24 +215,36 @@ public:
 
     if (is_rgb_) {
       cv::Mat mGSmooth;
-      cv::cvtColor(mMask, mMask, cv::COLOR_GRAY2BGR);
+      cv::cuda::GpuMat mMaskCuda(mMask), mSrcCuda(mSrc), mMaskCuda2, mSrcCuda2, mGSmoothCuda;
+      cv::cuda::cvtColor(mMaskCuda, mMaskCuda, cv::COLOR_GRAY2BGR);
 
-      mDst = cv::Mat(mSrc.size(), CV_32FC3);
-      mMask.convertTo(mMask, CV_32FC3, 1.0/255.0);
-      mSrc.convertTo(mSrc, CV_32FC3,1.0/255.0);
+      // Convert to float 3 channels
+      mMaskCuda.convertTo(mMaskCuda2, CV_32FC3, 1.0/255.0);
+      mSrcCuda.convertTo(mSrcCuda2, CV_32FC3, 1.0/255.0);
 
-      cv::blur(mSrc,mGSmooth, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1)); 
-      cv::blur(mMask,mMask, cv::Size(smooth_factor, smooth_factor), cv::Point(-1,-1));   
+      // Perform gaussian filtering
+      uint k_size = 2*std::floor(smooth_factor/2.0)+1;
+      cv::Ptr<cv::cuda::Filter> gaussSrc =
+        cv::cuda::createGaussianFilter(mSrcCuda2.type(), mSrcCuda2.type(), 
+                                       cv::Size(k_size, k_size), 0.0);
+      cv::Ptr<cv::cuda::Filter> gaussMask =
+        cv::cuda::createGaussianFilter(mMaskCuda2.type(), mMaskCuda2.type(),
+                                      cv::Size(k_size, k_size), 0.0);
+      gaussSrc->apply(mSrcCuda2, mGSmoothCuda);
+      gaussMask->apply(mMaskCuda2, mMaskCuda);
+      
+      // Add/subtract/multiply portion
+      cv::cuda::GpuMat M1, M2, M3, mDstCuda, mDstCuda2;
+      cv::cuda::subtract(cv::Scalar::all(1.0), mMaskCuda, M1);
+      cv::cuda::multiply(M1, mSrcCuda2, M2);
+      cv::cuda::multiply(mMaskCuda, mGSmoothCuda, M3);
+      cv::cuda::add(M2,M3,mDstCuda);
+      mDstCuda.convertTo(mDstCuda2, CV_8UC3, 255);
 
-      cv::Mat M1,M2,M3;
-
-      cv::subtract(cv::Scalar::all(1.0),mMask,M1);
-      cv::multiply(M1,mSrc,M2);
-      cv::multiply(mMask,mGSmooth,M3);
-      cv::add(M2,M3,mDst);
-
-      mDst.convertTo(mDst, CV_8UC3, 255);
+      // Convert back to destination
+      mDstCuda2.download(mDst);
     } else {
+      // This portion is not implemented in Cuda (TODO)
       mDst = cv::Mat(mSrc.size(), CV_32FC1);
       mMask.convertTo(mMask, CV_32FC1, 1.0/255.0);
       mSrc.convertTo(mSrc, CV_32FC1,1.0/255.0);
