@@ -18,7 +18,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 # find_package(OpenCV REQUIRED)
-find_package(OpenCV REQUIRED
+find_package(OpenCV 3.4.1 REQUIRED
     NO_MODULE
     PATHS /usr/local
     NO_DEFAULT_PATH
