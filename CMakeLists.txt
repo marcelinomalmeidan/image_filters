@@ -17,12 +17,15 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
 )
 
-# find_package(OpenCV REQUIRED)
-find_package(OpenCV 3.4.0 REQUIRED
-    NO_MODULE
-    PATHS /usr/local
-    NO_DEFAULT_PATH
-)
+if(USE_CUDA)
+  find_package(OpenCV 3.4.0 REQUIRED
+      NO_MODULE
+      PATHS /usr/local
+      NO_DEFAULT_PATH
+  )
+else()
+  find_package(OpenCV REQUIRED)
+endif(USE_CUDA)
 
 catkin_package(
 
