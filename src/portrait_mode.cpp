@@ -143,7 +143,8 @@ public:
         for (uint j = 0; j < width; j++) {
           cv::Scalar intensity = depth_image.at<float>(i,j);
           float pixel_depth = intensity[0]*depth_conversion_;
-          if ((pixel_depth < th_min_) || (pixel_depth > th_max_)) {
+          // std::cout << pixel_depth << " ";
+          if ((pixel_depth < th_min_) || (pixel_depth > th_max_) || isnan(pixel_depth)) {
             depth_mask.at<uchar>(i,j) = 0;
           }
         }
