@@ -34,6 +34,7 @@ class ImageConverter
   std::vector<double> crop_percent_;
   boost::shared_ptr<Sync> sync_;
   int smooth_factor_, smooth_factor_max_;
+  int mask_dilation_size_, mask_dilation_size_max_;
   // message_filters::TimeSynchronizer<sensor_msgs::Image, sensor_msgs::Image> sync_(rgb_sub_, depth_sub_, 10);
 
 public:
@@ -43,6 +44,7 @@ public:
     // Get parameters
     nh_.getParam("threshold_min", th_min_);
     nh_.getParam("threshold_max", th_max_);
+    nh_.getParam("mask_dilation_size", mask_dilation_size_);
     nh_.getParam("depth_conversion", depth_conversion_);
     nh_.getParam("invert_result", invert_);
     nh_.getParam("display_result", display_results_);
@@ -74,8 +76,9 @@ public:
       is_rgb_ = true;
     }
 
-    // Set max smooth factor
+    // Set max values
     smooth_factor_max_ = 30;
+    mask_dilation_size_max_ = 20;
 
     // Subscribe to input video feed and publish output video feed
     rgb_sub_.subscribe(nh_, in_rgb_topic_, 1);
@@ -92,6 +95,7 @@ public:
       int max_dist = 10000;
       cv::namedWindow(OPENCV_WINDOW);
       cv::createTrackbar( "Smoothness", OPENCV_WINDOW, &smooth_factor_, smooth_factor_max_, this->smooth_trackbar);
+      cv::createTrackbar( "Mask Dilation Size", OPENCV_WINDOW, &mask_dilation_size_, mask_dilation_size_max_, this->dilation_trackbar);
       cv::createTrackbar( "Min Distance Threshold (mm)", OPENCV_WINDOW, &th_min_mm_, max_dist, this->min_th_trackbar);
       cv::createTrackbar( "Max Distance Threshold (mm)", OPENCV_WINDOW, &th_max_mm_, max_dist, this->max_th_trackbar);
     }
@@ -143,7 +147,6 @@ public:
         for (uint j = 0; j < width; j++) {
           cv::Scalar intensity = depth_image.at<float>(i,j);
           float pixel_depth = intensity[0]*depth_conversion_;
-          // std::cout << pixel_depth << " ";
           if ((pixel_depth < th_min_) || (pixel_depth > th_max_) || isnan(pixel_depth)) {
             depth_mask.at<uchar>(i,j) = 0;
           }
@@ -152,7 +155,7 @@ public:
 
       // Dilate mask
       cv::Mat depth_mask_dilated(input_image.size(), CV_8UC1, cv::Scalar::all(255));
-      int dilation_size = 16;
+      int dilation_size = mask_dilation_size_;
       cv::Mat element = getStructuringElement(cv::MORPH_CROSS,
                       cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1),
                       cv::Point(dilation_size, dilation_size) );
@@ -235,6 +238,7 @@ public:
   }
 
   static void smooth_trackbar( int, void* ) { }
+  static void dilation_trackbar( int, void* ) { }
   static void min_th_trackbar( int, void* ) { }
   static void max_th_trackbar( int, void* ) { }
 };

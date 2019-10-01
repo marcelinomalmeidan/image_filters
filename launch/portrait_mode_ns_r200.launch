@@ -10,6 +10,9 @@
 		<!-- Smooth factor => determines how much the background is smoothed -->
 		<param name="smooth_factor" value="20"/>
 
+		<!-- mask_dilation_size => determines how many background pixels surrounding the foreground are kept in the output -->
+		<param name="mask_dilation_size" value="16"/>
+
 		<!-- Depth unit conversion (in case depth is not obtained in  meters) -->
 		<!-- realsense has depth in millimiters -->
 		<param name="depth_conversion" value="1.0"/>
