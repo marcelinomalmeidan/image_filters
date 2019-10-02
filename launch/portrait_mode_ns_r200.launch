@@ -5,7 +5,7 @@
 
 		<!--Min/max thresholds (in meters) -->
 		<param name="threshold_min" value="0.2"/>
-		<param name="threshold_max" value="2.0"/>
+		<param name="threshold_max" value="3.0"/>
 
 		<!-- Smooth factor => determines how much the background is smoothed -->
 		<param name="smooth_factor" value="20"/>
@@ -19,7 +19,7 @@
 
 		<!-- Options -->
 		<param name="invert_result" value="false"/>
-		<param name="display_result" value="true"/>
+		<param name="display_result" value="false"/>
 
 		<!-- OUTPUT TYPE (RGB or GRAY) -->
 		<param name="output_type" value="RGB"/>
