@@ -30,8 +30,8 @@
 		<!-- Image topics -->
 		<!-- NOTE: depth has to be registered to the color topic , i.e., their pixels are aligned-->
 		<!-- NOTE2: depth and color have to be time-synchronized (header/stamp should match) -->
-		<param name="input_rgb_topic" value="/$(arg namespace)/camera/color/image_raw"/>
-		<param name="input_depth_topic" value="/$(arg namespace)/camera/depth_registered/image_raw"/>
+		<param name="input_rgb_topic" value="/$(arg namespace)/camera/color/image_raw_low_freq"/>
+		<param name="input_depth_topic" value="/$(arg namespace)/camera/depth_registered/image_raw_low_freq"/>
 		<param name="out_topic" value="/$(arg namespace)/camera/rgb/image_raw"/>
 	</node>
 
