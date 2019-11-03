@@ -1,6 +1,6 @@
 <launch>
 
-	<arg name="namespace" default="Bilbo" />
+	<arg name="namespace" default="Sauron" />
     <node pkg="image_filters" type="portrait_mode" name="portrait_mode" output="screen">
 
 		<!--Min/max thresholds (in meters) -->
